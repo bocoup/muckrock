@@ -49,11 +49,20 @@ from muckrock.task.models import FlaggedTask, ResponseTask, StatusChangeTask
 logger = logging.getLogger(__name__)
 
 
+def _get_redirect(request, foia):
+    """Get the redirect URL"""
+    if "agency" in request.GET:
+        param = "?agency"
+    else:
+        param = ""
+    return redirect("{}{}#".format(foia.get_absolute_url(), param))
+
+
 def tags(request, foia):
     """Handle updating tags"""
     if foia.has_perm(request.user, "change"):
         foia.update_tags(request.POST.getlist("tags"))
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def projects(request, foia):
@@ -66,7 +75,7 @@ def projects(request, foia):
             # clear cache for old and new projects
             proj.clear_cache()
         foia.projects.set(projects_)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def status(request, foia):
@@ -96,7 +105,7 @@ def status(request, foia):
         )
         for task in response_tasks:
             task.resolve(request.user)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def add_note(request, foia):
@@ -111,23 +120,23 @@ def add_note(request, foia):
         foia_note.save()
         logger.info("%s added %s to %s", foia_note.author, foia_note, foia_note.foia)
         messages.success(request, "Your note is attached to the request.")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def flag(request, foia):
     """Allow a user to notify us of a problem with the request"""
-    form = FOIAFlagForm(request.POST)
-    has_perm = foia.has_perm(request.user, "flag")
-    if has_perm and form.is_valid():
+    form = FOIAFlagForm(request.POST, all_choices=True)
+    if form.is_valid():
         FlaggedTask.objects.create(
-            user=request.user,
+            user=request.user if request.user.is_authenticated else None,
             foia=foia,
             text=form.cleaned_data["text"],
             category=form.cleaned_data["category"],
         )
         messages.success(request, "Problem succesfully reported")
-        new_action(request.user, "flagged", target=foia)
-    return redirect(foia.get_absolute_url() + "#")
+        if request.user.is_authenticated:
+            new_action(request.user, "flagged", target=foia)
+    return _get_redirect(request, foia)
 
 
 def delete(request, foia):
@@ -142,7 +151,7 @@ def delete(request, foia):
             form.cleaned_data["note"],
         )
         messages.success(request, "Request succesfully deleted")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def contact_user(request, foia):
@@ -163,17 +172,17 @@ def contact_user(request, foia):
         )
         email.send(fail_silently=False)
         messages.success(request, "Email sent to %s" % foia.user.email)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def follow_up(request, foia):
     """Handle submitting follow ups"""
     if request.user.is_anonymous:
         messages.error(request, "You must be logged in to follow up")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     if foia.attachments_over_size_limit(request.user):
         messages.error(request, "Total attachment size must be less than 20MB")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     if request.user.is_staff:
         return _admin_follow_up(request, foia)
     else:
@@ -202,7 +211,7 @@ def _admin_follow_up(request, foia):
         )
         messages.success(request, "Your follow up has been sent.")
         new_action(request.user, "followed up on", target=foia)
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     else:
         raise FoiaFormError("admin_fix_form", form)
 
@@ -232,7 +241,7 @@ def _user_follow_up(request, foia):
             "Follow Up",
             foia.mixpanel_data({"Use Contact Info": use_contact_info}),
         )
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def thanks(request, foia):
@@ -242,7 +251,7 @@ def thanks(request, foia):
     comm_sent = _new_comm(request, foia, has_perm, success_msg, thanks=True)
     if comm_sent:
         new_action(request.user, verb="thanked", target=foia.agency)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def _new_comm(request, foia, test, success_msg, **kwargs):
@@ -275,16 +284,16 @@ def appeal(request, foia):
     )
     if not has_perm:
         messages.error(request, "You do not have permission to submit an appeal.")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     if not form.is_valid():
         messages.error(request, "You did not submit an appeal.")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     if foia.attachments_over_size_limit(request.user):
         messages.error(request, "Total attachment size must be less than 20MB")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     if use_contact_info and not contact_valid:
         messages.error(request, "Invalid contact information")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     communication = foia.appeal(
         form.cleaned_data["text"],
         request.user,
@@ -297,7 +306,7 @@ def appeal(request, foia):
     messages.success(request, "Your appeal has been sent.")
     if use_contact_info:
         foia.add_contact_info_note(request.user, contact_info_form.cleaned_data)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def date_estimate(request, foia):
@@ -313,7 +322,7 @@ def date_estimate(request, foia):
             messages.error(request, "Invalid date provided.")
     else:
         messages.error(request, "You cannot do that, stop it.")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def tracking_id(request, foia):
@@ -329,7 +338,7 @@ def tracking_id(request, foia):
             messages.error(request, "Please fill out the tracking number and reason")
     else:
         messages.error(request, "You do not have permission to do that")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def portal(request, foia):
@@ -345,7 +354,7 @@ def portal(request, foia):
             )
     else:
         messages.error(request, "You do not have permission to do that")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def update_new_agency(request, foia):
@@ -361,7 +370,7 @@ def update_new_agency(request, foia):
             messages.error(request, "The data was invalid! Try again.")
     else:
         messages.error(request, "You cannot do that, stop it.")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def generate_key(request, foia):
@@ -370,14 +379,14 @@ def generate_key(request, foia):
         if request.is_ajax():
             return PermissionDenied
         else:
-            return redirect(foia.get_absolute_url() + "#")
+            return _get_redirect(request, foia)
     else:
         key = foia.generate_access_key()
         if request.is_ajax():
             return JsonResponse({"key": key})
         else:
             messages.success(request, "New private link created.")
-            return redirect(foia.get_absolute_url() + "#")
+            return _get_redirect(request, foia)
 
 
 def grant_access(request, foia):
@@ -385,7 +394,7 @@ def grant_access(request, foia):
     form = FOIAAccessForm(request.POST)
     has_perm = foia.has_perm(request.user, "change")
     if not has_perm or not form.is_valid():
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     access = form.cleaned_data["access"]
     users = form.cleaned_data["users"]
     if access == "edit" and users:
@@ -402,7 +411,7 @@ def grant_access(request, foia):
             access,
         )
     messages.success(request, success_msg)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def revoke_access(request, foia):
@@ -418,7 +427,7 @@ def revoke_access(request, foia):
         messages.success(
             request, "%s no longer has access to this request." % user.profile.full_name
         )
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def demote(request, foia):
@@ -431,7 +440,7 @@ def demote(request, foia):
         messages.success(
             request, "%s can now only view this request." % user.profile.full_name
         )
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def promote(request, foia):
@@ -444,7 +453,7 @@ def promote(request, foia):
         messages.success(
             request, "%s can now edit this request." % user.profile.full_name
         )
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def agency_reply(request, foia):
@@ -489,7 +498,7 @@ def agency_reply(request, foia):
         else:
             raise FoiaFormError("agency_reply_form", form)
 
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def staff_pay(request, foia):
@@ -503,7 +512,7 @@ def staff_pay(request, foia):
             messages.error(request, "Not a valid amount")
         else:
             foia.pay(request.user, amount / 100.0)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def pay_fee(request, foia):
@@ -511,7 +520,7 @@ def pay_fee(request, foia):
     form = RequestFeeForm(request.POST, user=request.user)
     if not request.user.is_authenticated:
         messages.error(request, "Must be logged in to pay")
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     if form.is_valid():
         try:
             form.cleaned_data["organization"].pay(
@@ -537,7 +546,7 @@ def pay_fee(request, foia):
                 )
             else:
                 messages.error(request, "Payment Error")
-            return redirect(foia.get_absolute_url() + "#")
+            return _get_redirect(request, foia)
         else:
             messages.success(
                 request,
@@ -552,7 +561,7 @@ def pay_fee(request, foia):
                 foia.mixpanel_data({"Price": amount}),
                 charge=amount,
             )
-            return redirect(foia.get_absolute_url() + "#")
+            return _get_redirect(request, foia)
     else:
         raise FoiaFormError("fee_form", form)
 
@@ -573,7 +582,7 @@ def resend_comm(request, foia):
         else:
             comm = form.cleaned_data.get("communication")
             raise FoiaFormError("resend_form", form, comm_id=comm.id if comm else None)
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def move_comm(request, foia):
@@ -589,7 +598,7 @@ def move_comm(request, foia):
             messages.error(request, "The communication does not exist.")
         except ValueError:
             messages.error(request, "No move destination provided.")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def delete_comm(request, foia):
@@ -604,7 +613,7 @@ def delete_comm(request, foia):
             messages.success(request, "The communication was deleted.")
         except (KeyError, FOIACommunication.DoesNotExist):
             messages.error(request, "The communication does not exist.")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def status_comm(request, foia):
@@ -618,7 +627,7 @@ def status_comm(request, foia):
                 comm.save()
         except (KeyError, FOIACommunication.DoesNotExist):
             messages.error(request, "The communication does not exist.")
-    return redirect(foia.get_absolute_url() + "#")
+    return _get_redirect(request, foia)
 
 
 def agency_passcode(request, foia):
@@ -627,6 +636,6 @@ def agency_passcode(request, foia):
     if form.is_valid():
         request.session[f"foiapasscode:{foia.pk}"] = True
         request.session.set_expiry(settings.AGENCY_SESSION_TIME)
-        return redirect(foia.get_absolute_url() + "#")
+        return _get_redirect(request, foia)
     else:
         raise FoiaFormError("agency_passcode_form", form)
