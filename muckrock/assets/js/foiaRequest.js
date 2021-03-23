@@ -124,6 +124,7 @@ export function displayFile(file) {
     var title = file.data('title') || 'Untitled';
     var pages = file.data('pages') || 0;
     var url = file.data('url');
+    var staff = file.data("staff") == "True";
     var iframe = $("#viewer-iframe");
     var viewer = $("#viewer");
 
@@ -137,7 +138,8 @@ export function displayFile(file) {
     // load new embed in the iframe
     iframe.attr(
         "src",
-        url + "/documents/" + docId + "/?embed=1&amp;title=1"
+        url + "/documents/" + docId + 
+        (staff ? "/?noembed=1&amp;title=1" : "/?embed=1&amp;title=1")
     );
     viewer.hide();
     iframe.show();
