@@ -39,6 +39,7 @@ from muckrock.foia.forms import (
 )
 from muckrock.foia.forms.comms import AgencyPasscodeForm
 from muckrock.foia.models import STATUS, FOIACommunication
+from muckrock.foia.tasks import import_doccloud_file
 from muckrock.jurisdiction.forms import AppealForm
 from muckrock.jurisdiction.models import Appeal
 from muckrock.message.email import TemplateEmail
@@ -649,3 +650,12 @@ def agency_passcode(request, foia):
         return _get_redirect(request, foia)
     else:
         raise FoiaFormError("agency_passcode_form", form)
+
+
+def import_dc_file(request, foia):
+    """Import a file from DocumentCloud"""
+    if request.user.is_staff:
+        file_pk = request.POST.get("file_pk")
+        import_doccloud_file.delay(file_pk)
+        messages.success(request, "The file will be imported from DocumentCloud soon")
+    return _get_redirect(request, foia)
