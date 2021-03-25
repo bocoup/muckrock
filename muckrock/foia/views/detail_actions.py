@@ -659,3 +659,12 @@ def import_dc_file(request, foia):
         import_doccloud_file.delay(file_pk)
         messages.success(request, "The file will be imported from DocumentCloud soon")
     return _get_redirect(request, foia)
+
+
+def delete_file(request, foia):
+    """Import a file from DocumentCloud"""
+    if request.user.is_staff:
+        file_pk = request.POST.get("file_pk")
+        FOIAFile.objects.filter(pk=file_pk).delete()
+        messages.success(request, "File succesfully deleted")
+    return _get_redirect(request, foia)

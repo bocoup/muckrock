@@ -50,6 +50,7 @@ from muckrock.foia.models import (
     STATUS,
     FOIACommunication,
     FOIAComposer,
+    FOIAFile,
     FOIAMultiRequest,
     FOIARequest,
 )
