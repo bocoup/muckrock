@@ -38,7 +38,7 @@ from muckrock.foia.forms import (
     TrackingNumberForm,
 )
 from muckrock.foia.forms.comms import AgencyPasscodeForm
-from muckrock.foia.models import STATUS, FOIACommunication
+from muckrock.foia.models import STATUS, FOIACommunication, FOIAFile
 from muckrock.foia.tasks import import_doccloud_file
 from muckrock.jurisdiction.forms import AppealForm
 from muckrock.jurisdiction.models import Appeal
