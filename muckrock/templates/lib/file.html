@@ -87,7 +87,8 @@
     <form method="post">
       {% csrf_token %}
       <input type="hidden" name="file_pk" value="{{ file.pk }}">
-      <span>Really delete {{ file.name }}?</span>
+      <h1>Confirm</h1>
+      <p>Really delete {{ file.name }}?</p>
       <footer>
         <button type="submit" name="action" value="delete_file" class="red button">DELETE</button>
         <span class="close-modal button">Cancel</span>
