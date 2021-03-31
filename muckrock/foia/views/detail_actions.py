@@ -662,7 +662,7 @@ def import_dc_file(request, foia):
 
 
 def delete_file(request, foia):
-    """Import a file from DocumentCloud"""
+    """Delete a file"""
     if request.user.is_staff:
         file_pk = request.POST.get("file_pk")
         FOIAFile.objects.filter(pk=file_pk).delete()
