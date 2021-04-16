@@ -156,7 +156,7 @@ class GenericComposer(BuyRequestsMixin):
         else:
             contact_info = None
         try:
-            composer.submit(contact_info)
+            composer.submit(contact_info, form.cleaned_data.get("no_proxy"))
         except InsufficientRequestsError:
             messages.warning(self.request, "You need to purchase more requests")
         else:
