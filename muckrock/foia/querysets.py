@@ -202,8 +202,11 @@ class FOIARequestQuerySet(models.QuerySet):
         """Exclude requests made by org users"""
         return self.filter(composer__organization__individual=True)
 
-    def create_new(self, composer, agency):
+    def create_new(self, composer, agency, no_proxy):
         """Create a new request and submit it"""
+        # pylint: disable=import-outside-toplevel
+        from muckrock.foia.message import notify_proxy_user
+
         if composer.agencies.count() > 1:
             title = "%s (%s)" % (composer.title, agency.name)
         else:
@@ -215,7 +218,13 @@ class FOIARequestQuerySet(models.QuerySet):
             )
         else:
             date_due = None
-        proxy_info = agency.get_proxy_info()
+        if no_proxy:
+            proxy_user = None
+            missing_proxy = False
+        else:
+            proxy_info = agency.get_proxy_info()
+            proxy_user = proxy_info.get("from_user")
+            missing_proxy = proxy_info["missing_proxy"]
         foia = self.create(
             status="submitted",
             title=title,
@@ -225,13 +234,13 @@ class FOIARequestQuerySet(models.QuerySet):
             permanent_embargo=composer.permanent_embargo,
             composer=composer,
             date_due=date_due,
-            proxy=proxy_info.get("from_user"),
-            missing_proxy=proxy_info["missing_proxy"],
+            proxy=proxy_user,
+            missing_proxy=missing_proxy,
         )
         foia.tags.set(*composer.tags.all())
-        foia.create_initial_communication(
-            composer.user, proxy=proxy_info.get("from_user")
-        )
+        foia.create_initial_communication(composer.user, proxy=proxy_user)
+        if proxy_user:
+            notify_proxy_user(foia)
         foia.process_attachments(composer.user, composer=True)
 
     def get_stale(self):
