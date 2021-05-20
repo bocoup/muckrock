@@ -265,6 +265,7 @@ INSTALLED_APPS = (
     "opensearch",
     "dashing",
     "constance",
+    "constance.backends.database",
     "django_extensions",
     "social_django",
     "muckrock.accounts",
