@@ -25,15 +25,15 @@ import os
 import os.path
 import re
 import sys
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from random import randint
 
 # Third Party
+import boto3
 import dill as pickle
 import lob
 import numpy as np
 import requests
-from boto.s3.connection import S3Connection
 from constance import config
 from django_mailgun import MailgunAPIError
 from documentcloud import DocumentCloud
@@ -80,7 +80,7 @@ lob.api_key = settings.LOB_SECRET_KEY
     ignore_result=True,
     time_limit=600,
     name="muckrock.foia.tasks.upload_document_cloud",
-    autoretry_for=(DocumentCloudError,),
+    autoretry_for=(DocumentCloudError, requests.ReadTimeout),
     retry_backoff=60,
     retry_kwargs={"max_retries": 10},
 )
@@ -156,7 +156,7 @@ class DocumentCloudRetryError(Exception):
 @task(
     ignore_result=True,
     name="muckrock.foia.tasks.set_document_cloud_pages",
-    autoretry_for=(DocumentCloudError, DocumentCloudRetryError),
+    autoretry_for=(DocumentCloudError, DocumentCloudRetryError, requests.ReadTimeout),
     retry_backoff=60,
     retry_kwargs={"max_retries": 10},
 )
@@ -232,11 +232,7 @@ def composer_create_foias(composer_pk, contact_info, no_proxy, **kwargs):
         )
 
 
-@task(
-    ignore_result=True,
-    max_retries=10,
-    name="muckrock.foia.tasks.composer_delayed_submit",
-)
+@task(max_retries=10, name="muckrock.foia.tasks.composer_delayed_submit")
 def composer_delayed_submit(composer_pk, approve, contact_info, **kwargs):
     """Submit a composer to all agencies"""
     # pylint: disable=unused-argument
@@ -251,6 +247,7 @@ def composer_delayed_submit(composer_pk, approve, contact_info, **kwargs):
         composer = FOIAComposer.objects.get(pk=composer_pk)
     except FOIAComposer.DoesNotExist:
         # If the composer was deleted, just return
+        logger.info("could not fetch composer %s from db", composer_pk)
         return
 
     logger.info("Fetched the composer")
@@ -360,8 +357,9 @@ def send_fax(comm_id, subject, body, error_count, **kwargs):
     try:
         comm = FOIACommunication.objects.get(pk=comm_id)
     except FOIACommunication.DoesNotExist as exc:
+        logger.info("send_fax: retry for missing comm")
         send_fax.retry(
-            countdown=300,
+            countdown=10,
             args=[comm_id, subject, body, error_count],
             kwargs=kwargs,
             exc=exc,
@@ -370,6 +368,7 @@ def send_fax(comm_id, subject, body, error_count, **kwargs):
     # the fax number should always be set before calling this, if it is not
     # it is likely a race condition and we should retry
     if comm.foia.fax is None:
+        logger.info("send_fax: retry for missing fax")
         send_fax.retry(
             countdown=300, args=[comm_id, subject, body, error_count], kwargs=kwargs
         )
@@ -473,9 +472,8 @@ def embargo_warn():
             body=render_to_string(
                 "text/foia/embargo_will_expire.txt", {"request": foia}
             ),
-            from_email="info@muckrock.com",
             to=[foia.user.email],
-            bcc=["diagnostics@muckrock.com"],
+            bcc=[settings.DIAGNOSTIC_EMAIL],
         ).send(fail_silently=False)
 
 
@@ -496,9 +494,8 @@ def embargo_expire():
             body=render_to_string(
                 "text/foia/embargo_did_expire.txt", {"request": foia}
             ),
-            from_email="info@muckrock.com",
             to=[foia.user.email],
-            bcc=["diagnostics@muckrock.com"],
+            bcc=[settings.DIAGNOSTIC_EMAIL],
         ).send(fail_silently=False)
 
 
@@ -524,31 +521,33 @@ def autoimport():
 
     def s3_copy(bucket, key_or_pre, dest_name):
         """Copy an s3 key or prefix"""
-
-        if key_or_pre.name.endswith("/"):
-            for key in bucket.list(prefix=key_or_pre.name, delimiter="/"):
-                if key.name == key_or_pre.name:
-                    key.copy(bucket, dest_name)
+        if key_or_pre.endswith("/"):
+            for obj in bucket.objects.filter(Prefix=key_or_pre):
+                if obj.key == key_or_pre:
+                    bucket.Object(dest_name).copy_from(
+                        CopySource={"Bucket": bucket.name, "Key": obj.key}
+                    )
                     continue
                 s3_copy(
                     bucket,
-                    key,
-                    "%s/%s" % (dest_name, os.path.basename(os.path.normpath(key.name))),
+                    obj.key,
+                    "%s/%s" % (dest_name, os.path.basename(os.path.normpath(obj.key))),
                 )
         else:
-            key_or_pre.copy(bucket, dest_name)
+            bucket.Object(dest_name).copy_from(
+                CopySource={"Bucket": bucket.name, "Key": key_or_pre}
+            )
 
     def s3_delete(bucket, key_or_pre):
         """Delete an s3 key or prefix"""
-
-        if key_or_pre.name.endswith("/"):
-            for key in bucket.list(prefix=key_or_pre.name, delimiter="/"):
-                if key.name == key_or_pre.name:
-                    key.delete()
+        if key_or_pre.endswith("/"):
+            for obj in bucket.objects.filter(Prefix=key_or_pre):
+                if obj.key == key_or_pre:
+                    obj.delete()
                     continue
-                s3_delete(bucket, key)
+                s3_delete(bucket, obj.key)
         else:
-            key_or_pre.delete()
+            bucket.Object(key_or_pre).delete()
 
     def parse_name(name):
         """Parse a file name"""
@@ -572,11 +571,10 @@ def autoimport():
         return foia_pks, file_datetime
 
     @transaction.atomic
-    def import_key(key, storage_bucket, comm, log):
+    def import_key(key, bucket, storage_bucket, comm, log):
         """Import a key"""
-
         foia = comm.foia
-        file_name = os.path.split(key.name)[1]
+        file_name = os.path.split(key)[1]
 
         # first parameter is instance, but we do not have one yet
         # luckily, it is only used if the upload_to for the field is
@@ -584,12 +582,15 @@ def autoimport():
         full_file_name = FOIAFile.ffile.field.generate_filename(None, file_name)
         full_file_name = default_storage.get_available_name(full_file_name)
 
-        new_key = key.copy(storage_bucket, full_file_name)
-        new_key.set_acl("public-read")
+        new_obj = storage_bucket.Object(full_file_name)
+        new_obj.copy_from(
+            CopySource={"Bucket": bucket.name, "Key": key}, ACL=settings.AWS_DEFAULT_ACL
+        )
 
         foia_file = comm.attach_file(path=full_file_name, name=file_name, now=False)
 
-        if key.size != foia_file.ffile.size:
+        oldfile = bucket.Object(key)
+        if oldfile.content_length != foia_file.ffile.size:
             raise SizeError(key.size, foia_file.ffile.size, foia_file)
 
         log.append(
@@ -599,44 +600,51 @@ def autoimport():
 
     def import_prefix(prefix, bucket, storage_bucket, comm, log):
         """Import a prefix (folder) full of documents"""
-
-        for key in bucket.list(prefix=prefix.name, delimiter="/"):
-            if key.name == prefix.name:
+        for obj in bucket.objects.filter(Prefix=prefix):
+            if obj.key == prefix:
                 continue
-            if key.name.endswith("/"):
+            if obj.key.endswith("/"):
                 log.append(
                     "ERROR: nested directories not allowed: %s in %s"
-                    % (key.name, prefix.name)
+                    % (obj.key, prefix)
                 )
                 continue
             try:
-                import_key(key, storage_bucket, comm, log)
+                import_key(obj.key, bucket, storage_bucket, comm, log)
             except SizeError as exc:
-                s3_copy(bucket, key, "review/%s" % key.name[6:])
+                s3_copy(
+                    bucket,
+                    obj.key,
+                    "review/%s" % obj.key.replace(settings.AWS_AUTOIMPORT_PATH, ""),
+                )
                 exc.args[2].delete()  # delete the foia file
                 comm.delete()
                 log.append(
                     "ERROR: %s was %s bytes and after uploaded was %s bytes - retry"
-                    % (key.name[6:], exc.args[0], exc.args[1])
+                    % (
+                        obj.key.replace(settings.AWS_AUTOIMPORT_PATH, ""),
+                        exc.args[0],
+                        exc.args[1],
+                    )
                 )
 
     def process(log):
         """Process the files"""
         log.append("Start Time: %s" % timezone.now())
-        conn = S3Connection(settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY)
-        bucket = conn.get_bucket(settings.AWS_AUTOIMPORT_BUCKET_NAME)
-        storage_bucket = conn.get_bucket(settings.AWS_STORAGE_BUCKET_NAME)
-        for key in bucket.list(prefix="scans/", delimiter="/"):
-            if key.name == "scans/":
+        s3 = boto3.resource("s3")
+        bucket = s3.Bucket(settings.AWS_AUTOIMPORT_BUCKET_NAME)
+        storage_bucket = s3.Bucket(settings.AWS_MEDIA_BUCKET_NAME)
+        for obj in bucket.objects.filter(Prefix=settings.AWS_AUTOIMPORT_PATH):
+            if obj.key == settings.AWS_AUTOIMPORT_PATH:
                 continue
             # strip off 'scans/'
-            file_name = key.name[6:]
+            file_name = obj.key.replace(settings.AWS_AUTOIMPORT_PATH, "")
 
             try:
                 foia_pks, file_datetime = parse_name(file_name)
             except ValueError as exc:
-                s3_copy(bucket, key, "review/%s" % file_name)
-                s3_delete(bucket, key)
+                s3_copy(bucket, obj.key, "review/%s" % file_name)
+                s3_delete(bucket, obj.key)
                 log.append(str(exc))
                 continue
 
@@ -659,13 +667,13 @@ def autoimport():
                         communication=comm, sent_datetime=file_datetime
                     )
 
-                    if key.name.endswith("/"):
-                        import_prefix(key, bucket, storage_bucket, comm, log)
+                    if obj.key.endswith("/"):
+                        import_prefix(obj.key, bucket, storage_bucket, comm, log)
                     else:
-                        import_key(key, storage_bucket, comm, log)
+                        import_key(obj.key, bucket, storage_bucket, comm, log)
 
                 except FOIARequest.DoesNotExist:
-                    s3_copy(bucket, key, "review/%s" % file_name)
+                    s3_copy(bucket, obj.key, "review/%s" % file_name)
                     log.append(
                         "ERROR: %s references FOIA Request %s, but it does not exist"
                         % (file_name, foia_pk)
@@ -675,13 +683,13 @@ def autoimport():
                     # re-raise so we can catch and clean up
                     raise
                 except Exception as exc:
-                    s3_copy(bucket, key, "review/%s" % file_name)
+                    s3_copy(bucket, obj.key, "review/%s" % file_name)
                     log.append(
                         "ERROR: %s has caused an unknown error. %s" % (file_name, exc)
                     )
                     logger.error("Autoimport error: %s", exc, exc_info=sys.exc_info())
             # delete key after processing all requests for it
-            s3_delete(bucket, key)
+            s3_delete(bucket, obj.key)
         log.append("End Time: %s" % timezone.now())
 
     try:
@@ -697,9 +705,9 @@ def autoimport():
         EmailMessage(
             subject="[AUTOIMPORT] %s Logs" % timezone.now(),
             body="\n".join(log),
-            from_email="scans@muckrock.com",
-            to=["info@muckrock.com"],
-            bcc=["diagnostics@muckrock.com"],
+            from_email=settings.SCANS_EMAIL,
+            to=[settings.DEFAULT_FROM_EMAIL],
+            bcc=[settings.DIAGNOSTIC_EMAIL],
         ).send(fail_silently=False)
 
 
@@ -836,29 +844,7 @@ def zip_request(foia_pk, user_pk):
     ZipRequest(user_pk, foia_pk).run()
 
 
-@periodic_task(
-    run_every=crontab(hour=1, minute=0), name="muckrock.foia.tasks.clean_export_csv"
-)
-def clean_export_csv():
-    """Clean up exported CSVs and request zips that are more than 5 days old"""
-
-    p_csv = re.compile(
-        r"(\d{4})/(\d{2})/(\d{2})/[0-9a-f]+/(?:requests?|results)\.(?:csv|zip)"
-    )
-    conn = S3Connection(settings.AWS_ACCESS_KEY_ID, settings.AWS_SECRET_ACCESS_KEY)
-    bucket = conn.get_bucket(settings.AWS_STORAGE_BUCKET_NAME)
-    older_than = date.today() - timedelta(5)
-    for prefix in ["exported_csv/", "zip_request/"]:
-        for key in bucket.list(prefix=prefix):
-            file_name = key.name[len(prefix) :]
-            m_csv = p_csv.match(file_name)
-            if m_csv:
-                file_date = date(*(int(i) for i in m_csv.groups()))
-                if file_date < older_than:
-                    key.delete()
-
-
-@task(ignore_result=True, max_retries=10, name="muckrock.foia.tasks.foia_send_email")
+@task(max_retries=10, name="muckrock.foia.tasks.foia_send_email")
 def foia_send_email(foia_pk, comm_pk, options, **kwargs):
     """Send outgoing request emails asynchrnously"""
     # We do not want to do this using djcelery-email, as that
@@ -916,7 +902,6 @@ def prepare_snail_mail(comm_pk, category, switch, extra, force=False, **kwargs):
             return
     else:
         address = comm.foia.address
-
     for test, reason in [
         (not config.AUTO_LOB and not force, "auto"),
         (not address, "addr"),
@@ -969,12 +954,12 @@ def _lob_create_letter(comm, prepared_pdf, mail):
         description="Letter for communication {}".format(comm.pk),
         to_address=comm.foia.address.lob_format(comm.foia.agency),
         from_address={
-            "name": "MuckRock News",
-            "company": "DEPT MR {}".format(comm.foia.pk),
-            "address_line1": "411A Highland Ave",
-            "address_city": "Somerville",
-            "address_state": "MA",
-            "address_zip": "02144-2516",
+            "name": settings.ADDRESS_NAME,
+            "company": settings.ADDRESS_DEPT.format(comm.foia.pk),
+            "address_line1": settings.ADDRESS_STREET,
+            "address_city": settings.ADDRESS_CITY,
+            "address_state": settings.ADDRESS_STATE,
+            "address_zip": settings.ADDRESS_ZIP,
         },
         color=False,
         file=prepared_pdf,
@@ -997,12 +982,12 @@ def _lob_create_check(comm, prepared_pdf, mail, check_address, amount):
         description="Check for communication {}".format(comm.pk),
         to_address=check_address.lob_format(comm.foia.agency),
         from_address={
-            "name": "MuckRock News",
-            "company": "DEPT MR {}".format(comm.foia.pk),
-            "address_line1": "411A Highland Ave",
-            "address_city": "Somerville",
-            "address_state": "MA",
-            "address_zip": "02144-2516",
+            "name": settings.ADDRESS_NAME,
+            "company": settings.ADDRESS_DEPT.format(comm.foia.pk),
+            "address_line1": settings.ADDRESS_STREET,
+            "address_city": settings.ADDRESS_CITY,
+            "address_state": settings.ADDRESS_STATE,
+            "address_zip": settings.ADDRESS_ZIP,
         },
         bank_account=settings.LOB_BANK_ACCOUNT_ID,
         amount=amount,
@@ -1022,7 +1007,11 @@ def _lob_create_check(comm, prepared_pdf, mail, check_address, amount):
 
 
 @task(
-    ignore_result=True, max_retries=10, name="muckrock.foia.tasks.import_doccloud_file"
+    ignore_result=True,
+    autoretry_for=(DocumentCloudError, requests.ReadTimeout),
+    retry_backoff=60,
+    retry_kwargs={"max_retries": 10},
+    name="muckrock.foia.tasks.import_doccloud_file",
 )
 def import_doccloud_file(file_pk):
     """Import a file from DocumentCloud back into MuckRock"""

@@ -24,6 +24,11 @@ from PyPDF2.utils import PdfReadError
 # MuckRock
 from muckrock.communication.models import MailCommunication
 
+# These are the dimensions of a standard sized PDF page
+# in whatever units PyPDF2 are using
+PDF_WIDTH = 612
+PDF_HEIGHT = 792
+
 
 class PDF(FPDF):
     """Shared PDF settings"""
@@ -62,11 +67,12 @@ class MailPDF(PDF):
         self.set_font("DejaVu", "", 10)
         email = self.comm.foia.get_request_email()
         text = (
-            "MuckRock News\n"
-            "DEPT MR {pk}\n"
-            "411A Highland Ave\n"
-            "Somerville, MA 02144-2516\n"
-            "{email}".format(pk=self.comm.foia.pk, email=email)
+            f"{settings.ADDRESS_NAME}\n"
+            f"{settings.ADDRESS_DEPT}\n"
+            f"{settings.ADDRESS_STREET}\n"
+            f"{settings.ADDRESS_CITY}, {settings.ADDRESS_STATE} "
+            f"{settings.ADDRESS_ZIP}\n"
+            f"{email}".format(pk=self.comm.foia.pk)
         )
         width = self.get_string_width(email)
         self.set_xy(72 / 2, (72 * 0.6))
@@ -106,6 +112,29 @@ class MailPDF(PDF):
     def _extra_generate(self):
         """Hook for subclasses to override"""
 
+    def _resize_pages(self, pages):
+        """Resize the page if necessary and able"""
+        for page in pages:
+            width, height = page.pagedata.mediaBox.upperRight
+            if (width, height) != (PDF_WIDTH, PDF_HEIGHT):
+                if (
+                    abs(PDF_WIDTH - width) < PDF_WIDTH // 10
+                    and abs(PDF_HEIGHT - height) < PDF_HEIGHT // 10
+                ):
+                    # if we are within 10% of the desired dimensions,
+                    # just scale it to the correct size
+                    page.pagedata.scaleTo(PDF_WIDTH, PDF_HEIGHT)
+                elif (
+                    width > height
+                    and abs(PDF_WIDTH - height) < PDF_WIDTH // 10
+                    and abs(PDF_HEIGHT - width) < PDF_HEIGHT // 10
+                ):
+                    # if we are in landscape mode and are within 10% of the
+                    # desired dimensions of the opposite dimension,
+                    # scale and rotate 90 degrees
+                    page.pagedata.scaleTo(PDF_HEIGHT, PDF_WIDTH)
+                    page.pagedata.rotateCounterClockwise(90)
+
     def prepare(self, address_override=None):
         """Prepare the PDF to be sent by appending attachments"""
         # generate the pdf and merge all pdf attachments
@@ -133,6 +162,7 @@ class MailPDF(PDF):
 
         single_pdf = BytesIO()
         try:
+            self._resize_pages(merger.pages)
             merger.write(single_pdf)
         except PdfReadError:
             return (None, None, files, None)

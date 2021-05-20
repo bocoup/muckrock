@@ -9,18 +9,20 @@ Settings used when developing locally
 from muckrock.settings.base import *
 
 DEBUG = True
-EMAIL_DEBUG = DEBUG
-THUMBNAIL_DEBUG = DEBUG
-AWS_DEBUG = False
+
+# Loads static files locally
+STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+STATIC_URL = "/static/"
+COMPRESS_ENABLED = False
 
 MIDDLEWARE += ("muckrock.settings.local.ExceptionLoggingMiddleware",)
 MIDDLEWARE = ("silk.middleware.SilkyMiddleware",) + MIDDLEWARE
 
 INSTALLED_APPS += ("silk",)
 
-SILKY_PYTHON_PROFILER = True
-SILKY_PYTHON_PROFILER_BINARY = True
-SILKY_META = True
+SILKY_PYTHON_PROFILER = False
+SILKY_PYTHON_PROFILER_BINARY = False
+SILKY_META = False
 
 DEBUG_TOOLBAR_PANELS = [
     "debug_toolbar.panels.versions.VersionsPanel",
@@ -66,9 +68,11 @@ DEBUG_TOOLBAR_CONFIG = {
 
 EMAIL_HOST = "dev.mailhog.com"
 EMAIL_PORT = 1025
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 QUERYCOUNT = {"DISPLAY_DUPLICATES": 10}
 
+COMPRESS_ENABLED = False
 CACHE_DEBUG = False
 if CACHE_DEBUG:
     CACHES["default"] = {
@@ -106,3 +110,21 @@ ALLOWED_HOSTS = [
     "dev.muckrock.com",
     "dev.foiamachine.org",
 ]
+
+AWS_DEBUG = False
+
+if AWS_DEBUG:
+    DEFAULT_FILE_STORAGE = "muckrock.core.storage.MediaRootS3BotoStorage"
+    THUMBNAIL_DEFAULT_STORAGE = DEFAULT_FILE_STORAGE
+    STATICFILES_STORAGE = "muckrock.core.storage.CachedS3Boto3Storage"
+    COMPRESS_STORAGE = STATICFILES_STORAGE
+    STATIC_URL = "https://muckrock-devel2.s3.amazonaws.com/static/"
+    COMPRESS_URL = STATIC_URL
+    MEDIA_URL = "https://muckrock-devel2.s3.amazonaws.com/media/"
+    CLEAN_S3_ON_FOIA_DELETE = True
+    AWS_S3_CUSTOM_DOMAIN = ""
+else:
+    STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
+    STATIC_URL = "/static/"
+    MEDIA_URL = "/media/"
+    CLEAN_S3_ON_FOIA_DELETE = False

@@ -27,6 +27,7 @@ import logging
 from datetime import datetime
 
 # Third Party
+import boto3
 from django_filters import FilterSet
 
 # MuckRock
@@ -665,7 +666,7 @@ class PaymentInfoTaskList(TaskList):
             address, _created = Address.objects.get_or_create(
                 # set address override to blank for uniqueness purposes
                 address="",
-                **form.cleaned_data
+                **form.cleaned_data,
             )
             AgencyAddress.objects.create(
                 agency=agency, address=address, request_type="check"
@@ -733,7 +734,18 @@ def snail_mail_bulk_pdf(request):
     # pylint: disable=unused-argument
     pdf_name = timezone.now().strftime("snail_mail_pdfs/%Y/%m/%d/%H-%M-%S.pdf")
     snail_mail_bulk_pdf_task.delay(pdf_name, request.GET.dict())
-    return JsonResponse({"pdf_name": pdf_name})
+
+    # Generate GET/HEAD presigned URLs for the client
+    urls = {}
+    s3 = boto3.client("s3")
+    for action in ["head", "get"]:
+        urls[f"{action}_url"] = s3.generate_presigned_url(
+            ClientMethod=f"{action}_object",
+            Params={"Bucket": settings.AWS_MEDIA_BUCKET_NAME, "Key": pdf_name},
+            ExpiresIn=3600,
+        )
+
+    return JsonResponse(urls)
 
 
 @user_passes_test(lambda u: u.is_staff)

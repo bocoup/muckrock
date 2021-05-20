@@ -77,7 +77,7 @@ class FOIARequest(models.Model):
     # pylint: disable=too-many-public-methods
     # pylint: disable=too-many-instance-attributes
 
-    title = models.CharField(max_length=255, db_index=True)
+    title = models.CharField(max_length=1024, db_index=True)
     slug = models.SlugField(max_length=255)
     status = models.CharField(max_length=10, choices=STATUS, db_index=True)
     agency = models.ForeignKey("agency.Agency", on_delete=models.PROTECT)
@@ -316,17 +316,22 @@ class FOIARequest(models.Model):
 
     def get_passcode(self):
         """Get a passcode for agency users"""
+        logger.info("PASSCODE start: %s", self.pk)
         if self.passcode:
+            logger.info("PASSCODE have: %s %s", self.pk, self.passcode)
             return self.passcode
 
         key = utils.generate_key(8, "ABCEFGHJKLMNPRUVWXY")
         with transaction.atomic():
             foia = FOIARequest.objects.select_for_update().get(pk=self.pk)
             if foia.passcode:
-                return foia.passcode
-            foia.passcode = key
+                logger.info("PASSCODE other: %s %s", self.pk, foia.passcode)
+                self.passcode = foia.passcode
+                return self.passcode
+            self.passcode = foia.passcode = key
             foia.save()
-        return key
+        logger.info("PASSCODE mine: %s %s", self.pk, key)
+        return self.passcode
 
     def get_files(self):
         """Get all files under this FOIA"""
@@ -651,7 +656,7 @@ class FOIARequest(models.Model):
             # we include the latest pdf here under the assumption
             # it is the rejection letter
             include_latest_pdf=True,
-            **kwargs
+            **kwargs,
         )
 
     def pay(self, user, amount):
@@ -763,7 +768,7 @@ class FOIARequest(models.Model):
                 from_email=str(from_email),
                 to=[str(self.email)],
                 cc=[str(e) for e in self.cc_emails.all() if e.status == "good"],
-                bcc=["diagnostics@muckrock.com"],
+                bcc=[settings.DIAGNOSTIC_EMAIL],
                 headers={"X-Mailgun-Variables": {"email_id": email_comm.pk}},
                 connection=email_connection,
             )
@@ -772,6 +777,7 @@ class FOIARequest(models.Model):
             comm.attach_files_to_email(msg)
 
             try:
+                logger.info("sending mail with backend: %s", backend)
                 msg.send(fail_silently=False)
             except MailgunAPIError as exc:
                 EmailError.objects.create(
@@ -895,6 +901,13 @@ class FOIARequest(models.Model):
             "switch": switch,
             "msg_comms": self.get_msg_comms(comm, short=payment),
         }
+        context["return_address"] = (
+            f"{settings.ADDRESS_NAME}\n"
+            f"{settings.ADDRESS_DEPT}\n"
+            f"{settings.ADDRESS_STREET}\n"
+            f"{settings.ADDRESS_CITY}, {settings.ADDRESS_STATE} "
+            f"{settings.ADDRESS_ZIP}".format(pk=self.pk)
+        )
         if payment and include_address:
             payment_address = self.agency.get_addresses("check").first()
             if payment_address:
@@ -1024,7 +1037,7 @@ class FOIARequest(models.Model):
                     "foia_idx": self.pk,
                 },
             ),
-            **email_args
+            **email_args,
         )
 
     def update_tags(self, tags):
@@ -1311,9 +1324,7 @@ class FOIARequest(models.Model):
             # delete from s3
             bucket = get_s3_storage_bucket()
             for file_ in files:
-                key = bucket.get_key(file_.ffile.name)
-                if key:
-                    key.delete()
+                bucket.Object(file_.ffile.name).delete()
 
             clear_cloudfront_cache([f.ffile.name for f in files])
 

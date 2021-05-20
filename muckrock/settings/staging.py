@@ -13,14 +13,15 @@ from django_mailgun import MailgunBackend
 # MuckRock
 from muckrock.settings.heroku import *
 
-INSTALLED_APPS += ("bandit",)
+INSTALLED_APPS += (
+    "bandit",
+    "silk",
+)
 
-BANDIT_EMAIL = "staging@muckrock.com"
+BANDIT_EMAIL = os.environ.get("BANDIT_EMAIL", "staging@muckrock.com")
 BANDIT_WHITELIST = [
     e.strip() for e in os.environ.get("BANDIT_WHITELIST", "").split(",") if e.strip()
 ]
-
-SECURE_SSL_REDIRECT = True
 
 
 class HijackMailgunBackend(HijackBackendMixin, MailgunBackend):
@@ -35,3 +36,7 @@ os.environ["http_proxy"] = os.environ.get("FIXIE_URL", "")
 os.environ["https_proxy"] = os.environ.get("FIXIE_URL", "")
 
 SCOUT_NAME = "MuckRock Staging"
+
+DEBUG = True
+
+MIDDLEWARE = ("silk.middleware.SilkyMiddleware",) + MIDDLEWARE

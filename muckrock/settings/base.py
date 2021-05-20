@@ -25,9 +25,6 @@ def boolcheck(setting):
 asynpool.PROC_ALIVE_TIMEOUT = 60.0
 
 DEBUG = False
-EMAIL_DEBUG = DEBUG
-THUMBNAIL_DEBUG = DEBUG
-AWS_DEBUG = False
 
 SITE_ROOT = os.path.realpath(os.path.dirname(os.path.dirname(__file__)))
 
@@ -36,7 +33,23 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
 
-DEFAULT_FROM_EMAIL = "MuckRock <info@muckrock.com>"
+DEFAULT_FROM_EMAIL = os.environ.get("FROM_EMAIL", "info@muckrock.com")
+DIAGNOSTIC_EMAIL = os.environ.get("DIAGNOSTIC_EMAIL", "diagnostics@muckrock.com")
+SCANS_EMAIL = os.environ.get("SCANS_EMAIL", "scans@muckrock.com")
+ASSIGNMENTS_EMAIL = os.environ.get("ASSIGNMENTS_EMAIL", "assignments@muckrock.com")
+
+ADDRESS_NAME = os.environ.get("ADDRESS_NAME", "MuckRock News")
+ADDRESS_DEPT = os.environ.get("ADDRESS_DEPT", "DEPT MR {pk}")
+ADDRESS_STREET = os.environ.get("ADDRESS_STREET", "411A Highland Ave")
+ADDRESS_CITY = os.environ.get("ADDRESS_CITY", "Somerville")
+ADDRESS_STATE = os.environ.get("ADDRESS_STATE", "MA")
+ADDRESS_ZIP = os.environ.get("ADDRESS_ZIP", "02144-2516")
+
+PHONE_NUMBER = os.environ.get("PHONE_NUMBER", "(617) 299-1832")
+PHONE_NUMBER_LINK = os.environ.get(
+    "PHONE_NUMBER_LINK", "+1" + PHONE_NUMBER.translate({ord(i): None for i in "()- "})
+)
+
 
 DATA_UPLOAD_MAX_NUMBER_FIELDS = None
 
@@ -98,37 +111,65 @@ COMPRESS_JS_FILTERS = []
 
 THUMBNAIL_CACHE_DIMENSIONS = True
 
-if AWS_DEBUG:
-    DEFAULT_FILE_STORAGE = "muckrock.core.storage.MediaRootS3BotoStorage"
-    THUMBNAIL_DEFAULT_STORAGE = DEFAULT_FILE_STORAGE
-    STATICFILES_STORAGE = "muckrock.core.storage.CachedS3Boto3Storage"
-    COMPRESS_STORAGE = STATICFILES_STORAGE
-    STATIC_URL = "https://muckrock-devel2.s3.amazonaws.com/static/"
-    COMPRESS_URL = STATIC_URL
-    MEDIA_URL = "https://muckrock-devel2.s3.amazonaws.com/media/"
-    CLEAN_S3_ON_FOIA_DELETE = True
-    AWS_S3_CUSTOM_DOMAIN = ""
-else:
-    STATICFILES_STORAGE = "django.contrib.staticfiles.storage.StaticFilesStorage"
-    STATIC_URL = "/static/"
-    MEDIA_URL = "/media/"
-    CLEAN_S3_ON_FOIA_DELETE = False
+# Boto3S3Storage configuration
+DEFAULT_FILE_STORAGE = "muckrock.core.storage.MediaRootS3BotoStorage"
+THUMBNAIL_DEFAULT_STORAGE = DEFAULT_FILE_STORAGE
+STATICFILES_STORAGE = "muckrock.core.storage.CachedS3Boto3Storage"
+COMPRESS_STORAGE = STATICFILES_STORAGE
+CLEAN_S3_ON_FOIA_DELETE = True
 
-STATICFILES_FINDERS = (
-    "django.contrib.staticfiles.finders.FileSystemFinder",
-    "django.contrib.staticfiles.finders.AppDirectoriesFinder",
-    "compressor.finders.CompressorFinder",
+# Settings for static bucket storage
+AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME", "muckrock-devel2")
+AWS_AUTOIMPORT_BUCKET_NAME = os.environ.get(
+    "AWS_AUTOIMPORT_BUCKET_NAME", "muckrock-autoimprot-devel"
 )
-
+AWS_AUTOIMPORT_PATH = os.environ.get("AWS_AUTOIMPORT_PATH", "scans/")
+AWS_S3_CUSTOM_DOMAIN = os.environ.get("CLOUDFRONT_DOMAIN")
+STATIC_URL = (
+    f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+    if AWS_S3_CUSTOM_DOMAIN
+    else f"https://{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
+)
+COMPRESS_URL = STATIC_URL
+COMPRESS_ENABLED = True
 AWS_QUERYSTRING_AUTH = False
 AWS_S3_SECURE_URLS = True
 AWS_HEADERS = {
     "Expires": "Thu, 31 Dec 2099 20:00:00 GMT",
     "Cache-Control": "max-age=94608000",
 }
-AWS_DEFAULT_ACL = "public-read"
+AWS_DEFAULT_ACL = os.environ.get("AWS_STORAGE_DEFAULT_ACL", "public-read")
 AWS_S3_MAX_MEMORY_SIZE = int(os.environ.get("AWS_S3_MAX_MEMORY_SIZE", 16 * 1024 * 1024))
 AWS_S3_MIN_PART_SIZE = int(os.environ.get("AWS_S3_MIN_PART_SIZE", 16 * 1024 * 1024))
+
+# Set these ENV vars for a separate user-data storage bucket
+# (otherwise matches storage settings above)
+AWS_MEDIA_BUCKET_NAME = os.environ.get("AWS_MEDIA_BUCKET_NAME", AWS_STORAGE_BUCKET_NAME)
+AWS_MEDIA_QUERYSTRING_AUTH = os.environ.get(
+    "AWS_MEDIA_QUERYSTRING_AUTH", AWS_QUERYSTRING_AUTH
+)
+AWS_MEDIA_CUSTOM_DOMAIN = os.environ.get("MEDIA_CLOUDFRONT_DOMAIN")
+AWS_MEDIA_EXPIRATION_SECONDS = os.environ.get(
+    "AWS_MEDIA_EXPIRATION_SECONDS", 432000
+)  # Default is 5 days
+
+if AWS_MEDIA_BUCKET_NAME == AWS_STORAGE_BUCKET_NAME:
+    # Inherit bucket/cloudfront settings from static data if they match
+    MEDIA_URL = ""
+    AWS_MEDIA_CUSTOM_DOMAIN = AWS_S3_CUSTOM_DOMAIN
+else:
+    # Infer the media url from the custom domain or bucket name settings
+    MEDIA_URL = (
+        f"https://{AWS_MEDIA_CUSTOM_DOMAIN}/"
+        if AWS_MEDIA_CUSTOM_DOMAIN
+        else f"https://{AWS_MEDIA_BUCKET_NAME}.s3.amazonaws.com/"
+    )
+
+STATICFILES_FINDERS = (
+    "django.contrib.staticfiles.finders.FileSystemFinder",
+    "django.contrib.staticfiles.finders.AppDirectoriesFinder",
+    "compressor.finders.CompressorFinder",
+)
 
 TEMPLATES = [
     {
@@ -139,7 +180,7 @@ TEMPLATES = [
             "context_processors": [
                 "django.contrib.auth.context_processors.auth",
                 "django.template.context_processors.debug",
-                #'django.template.context_processors.i18n',
+                # 'django.template.context_processors.i18n',
                 "django.template.context_processors.media",
                 "django.template.context_processors.request",
                 "django.contrib.messages.context_processors.messages",
@@ -224,7 +265,6 @@ INSTALLED_APPS = (
     "opensearch",
     "dashing",
     "constance",
-    "constance.backends.database",
     "django_extensions",
     "social_django",
     "muckrock.accounts",
@@ -390,10 +430,6 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
-AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_STORAGE_BUCKET_NAME", "muckrock-devel2")
-AWS_AUTOIMPORT_BUCKET_NAME = os.environ.get(
-    "AWS_AUTOIMPORT_BUCKET_NAME", "muckrock-autoimprot-devel"
-)
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
 STRIPE_PUB_KEY = os.environ.get("STRIPE_PUB_KEY")
@@ -404,10 +440,12 @@ MAILCHIMP_API_ROOT = "https://us2.api.mailchimp.com/3.0"
 MAILCHIMP_LIST_DEFAULT = "20aa4a931d"
 
 MAILGUN_ACCESS_KEY = os.environ.get("MAILGUN_ACCESS_KEY")
-MAILGUN_SERVER_NAME = "requests.muckrock.com"
+MAILGUN_SERVER_NAME = os.environ.get("MAILGUN_SERVER_NAME", "requests.muckrock.com")
 
 EMAIL_SUBJECT_PREFIX = "[Muckrock]"
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
+)
 
 DOCUMENTCLOUD_BETA_USERNAME = os.environ.get("DOCUMENTCLOUD_BETA_USERNAME")
 DOCUMENTCLOUD_BETA_PASSWORD = os.environ.get("DOCUMENTCLOUD_BETA_PASSWORD")
@@ -427,7 +465,7 @@ PUBLICATION_NAME = "MuckRock"
 PUBLICATION_TIME_ZONE = "-05:00"
 
 # Register database schemes in URLs.
-urllib.parse.uses_netloc.append("postgres")
+# urllib.parse.uses_netloc.append("postgres")
 
 url = urllib.parse.urlparse(
     os.environ.get("DATABASE_URL", "postgres://vagrant@localhost/muckrock")
@@ -539,8 +577,24 @@ ALLOWED_FILE_MIMES = [
     "application/vnd.oasis.opendocument.text",
     "text/html",
     "text/plain",
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]
-ALLOWED_FILE_EXTS = ["pdf", "jpg", "png", "tif", "doc", "docx", "odt", "html", "txt"]
+ALLOWED_FILE_EXTS = [
+    "pdf",
+    "jpg",
+    "png",
+    "tif",
+    "doc",
+    "docx",
+    "odt",
+    "html",
+    "txt",
+    "csv",
+    "xls",
+    "xlsx",
+]
 
 # for django-phonenumber-field
 PHONENUMBER_DB_FORMAT = "INTERNATIONAL"
@@ -561,6 +615,7 @@ DASHING = {
     "INSTALLED_WIDGETS": ("number", "list", "graph", "requestlist"),
     "PERMISSION_CLASSES": ("dashing.permissions.IsAdminUser",),
 }
+
 
 CONSTANCE_BACKEND = "constance.backends.database.DatabaseBackend"
 CONSTANCE_SUPERUSER_ONLY = False
