@@ -33,5 +33,3 @@ os.environ["http_proxy"] = os.environ.get("FIXIE_URL", "")
 os.environ["https_proxy"] = os.environ.get("FIXIE_URL", "")
 
 SCOUT_NAME = "MuckRock Staging"
-
-DEBUG = True
