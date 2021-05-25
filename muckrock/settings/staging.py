@@ -13,10 +13,7 @@ from django_mailgun import MailgunBackend
 # MuckRock
 from muckrock.settings.heroku import *
 
-INSTALLED_APPS += (
-    "bandit",
-    "silk",
-)
+INSTALLED_APPS += ("bandit",)
 
 BANDIT_EMAIL = os.environ.get("BANDIT_EMAIL", "staging@muckrock.com")
 BANDIT_WHITELIST = [
@@ -38,5 +35,3 @@ os.environ["https_proxy"] = os.environ.get("FIXIE_URL", "")
 SCOUT_NAME = "MuckRock Staging"
 
 DEBUG = True
-
-MIDDLEWARE = ("silk.middleware.SilkyMiddleware",) + MIDDLEWARE
