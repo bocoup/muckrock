@@ -217,7 +217,6 @@ def _delete(request, model, idx):
     return HttpResponse()
 
 
-@login_or_agency_required
 def delete_request(request, idx):
     """Delete a pending attachment from a FOIA Request"""
     return _delete(request, OutboundRequestAttachment, idx)

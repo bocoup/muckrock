@@ -225,7 +225,7 @@ def composer_create_foias(composer_pk, contact_info, no_proxy, **kwargs):
             "jurisdiction__law", "jurisdiction__parent__law"
         ).iterator():
             logger.info("Creating the foia for agency (%s, %s)", agency.pk, agency.name)
-            FOIARequest.objects.create_new(composer, agency, no_proxy)
+            FOIARequest.objects.create_new(composer, agency, no_proxy, contact_info)
         # mark all attachments as sent here, after all requests have been sent
         composer.pending_attachments.filter(user=composer.user, sent=False).update(
             sent=True
@@ -955,7 +955,7 @@ def _lob_create_letter(comm, prepared_pdf, mail):
         to_address=comm.foia.address.lob_format(comm.foia.agency),
         from_address={
             "name": settings.ADDRESS_NAME,
-            "company": settings.ADDRESS_DEPT.format(comm.foia.pk),
+            "company": settings.ADDRESS_DEPT.format(pk=comm.foia.pk),
             "address_line1": settings.ADDRESS_STREET,
             "address_city": settings.ADDRESS_CITY,
             "address_state": settings.ADDRESS_STATE,
@@ -983,7 +983,7 @@ def _lob_create_check(comm, prepared_pdf, mail, check_address, amount):
         to_address=check_address.lob_format(comm.foia.agency),
         from_address={
             "name": settings.ADDRESS_NAME,
-            "company": settings.ADDRESS_DEPT.format(comm.foia.pk),
+            "company": settings.ADDRESS_DEPT.format(pk=comm.foia.pk),
             "address_line1": settings.ADDRESS_STREET,
             "address_city": settings.ADDRESS_CITY,
             "address_state": settings.ADDRESS_STATE,
