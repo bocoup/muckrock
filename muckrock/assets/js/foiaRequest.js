@@ -323,14 +323,6 @@ $('document').ready(function(){
 
 /* Contact Info */
 
-function formatCC(ccEmails) {
-  if (ccEmails.length == 1) {
-    return ccEmails[0];
-  } else {
-    return ccEmails.slice(0, -1).join(" ,") + " and " + ccEmails[ccEmails.length - 1];
-  }
-}
-
 export default function showOrigContactInfo() {
   $(".contact-info").each(function() {
     var
@@ -363,12 +355,23 @@ export default function showOrigContactInfo() {
         portalURL
       ).append(".");
     } else if (email) {
-      var text = "will be submitted via email to " + email;
+      var html = "will be submitted via email to " + email;
       if (ccEmails.length > 0) {
-        text += ", as well as CCed to " + formatCC(ccEmails);
+        html += ", as well as CCed to:";
+        for (var i = 0; i < ccEmails.length; i++) {
+          html += `
+            <div class="">
+              <label>
+                <input type="checkbox" name="cc_emails" value="${ccEmails[i]}" checked>
+                ${ccEmails[i]}
+              </label>
+            </div>
+          `;
+        }
+      } else {
+        html += ".";
       }
-      text += ".";
-      $(this).find(".info span").text(text);
+      $(this).find(".info span").html(html);
     } else if (fax) {
       $(this).find(".info span").text(
         "will be submitted via fax to "
