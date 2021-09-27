@@ -22,7 +22,12 @@ from itertools import groupby
 # Third Party
 import bleach
 from zenpy import Zenpy
-from zenpy.lib.api_objects import Comment, Request, User as ZenUser
+from zenpy.lib.api_objects import (
+    Comment,
+    Organization as ZenOrganization,
+    Ticket,
+    User as ZenUser,
+)
 
 # MuckRock
 from muckrock.communication.models import Check, EmailAddress, PhoneNumber
@@ -59,6 +64,8 @@ logger = logging.getLogger(__name__)
 
 # pylint: disable=missing-docstring
 # pylint: disable=too-many-lines
+
+MR_NUMBER_FIELD = 1500004565182
 
 
 class Task(models.Model):
@@ -282,7 +289,14 @@ class ReviewAgencyTask(Task):
     and new contact information is required"""
 
     type = "ReviewAgencyTask"
+    sources = (
+        ("staff", "Staff Review"),
+        ("stale", "Stale Request"),
+        ("email", "Bad Email"),
+        ("fax", "Bad Fax"),
+    )
     agency = models.ForeignKey("agency.Agency", on_delete=models.PROTECT)
+    source = models.CharField(max_length=5, choices=sources, blank=True, null=True)
 
     objects = ReviewAgencyTaskQuerySet.as_manager()
 
@@ -558,8 +572,11 @@ class FlaggedTask(Task):
     type = "FlaggedTask"
     text = models.TextField()
     user = models.ForeignKey(User, blank=True, null=True, on_delete=models.PROTECT)
+    # Allow FOIA to be set null, in the case that they add custom contact information,
+    # which creates a flag task, and they try to edit the request before it is sent,
+    # which will delete the request and return you to the composer
     foia = models.ForeignKey(
-        "foia.FOIARequest", blank=True, null=True, on_delete=models.PROTECT
+        "foia.FOIARequest", blank=True, null=True, on_delete=models.SET_NULL
     )
     agency = models.ForeignKey(
         "agency.Agency", blank=True, null=True, on_delete=models.PROTECT
@@ -679,6 +696,7 @@ class FlaggedTask(Task):
             return None
 
     def create_zendesk_ticket(self):
+        # pylint: disable=too-many-branches
         client = Zenpy(
             email=settings.ZENDESK_EMAIL,
             subdomain=settings.ZENDESK_SUBDOMAIN,
@@ -704,6 +722,12 @@ class FlaggedTask(Task):
                 )
                 tags.append("{}_flag".format(obj_name))
 
+        if self.foia:
+            description += (
+                "\nNOTE: If the FOIA does not exist, "
+                "the user may have deleted it, and you may safely close this ticket."
+            )
+
         if self.user:
             entitlements = list(
                 self.user.organizations.values_list(
@@ -714,7 +738,7 @@ class FlaggedTask(Task):
                 entitlements.remove("free")
             tags.extend(entitlements)
 
-        request = {
+        ticket_data = {
             "subject": self.get_category_display() or "Generic Flag",
             "comment": Comment(body=description),
             "type": "task",
@@ -722,15 +746,33 @@ class FlaggedTask(Task):
             "status": "new",
             "tags": tags,
         }
+        if self.foia:
+            ticket_data["custom_fields"] = [
+                {"id": MR_NUMBER_FIELD, "value": self.foia.pk}
+            ]
         if self.user:
-            requester = {"name": self.user.profile.full_name or self.user.username}
+            user_data = {
+                "name": self.user.profile.full_name or self.user.username,
+                "external_id": str(self.user.profile.uuid),
+            }
             if self.user.email:
-                requester["email"] = self.user.email
+                user_data["email"] = self.user.email
+            org_data = {
+                "name": self.user.profile.organization.name,
+                "external_id": str(self.user.profile.organization.uuid),
+            }
         else:
-            requester = {"name": "Anonymous User"}
-        request["requester"] = ZenUser(**requester)
-        request = client.requests.create(Request(**request))
-        return request.id
+            user_data = {"name": "Anonymous User"}
+            org_data = {}
+
+        if org_data:
+            org = client.organizations.create_or_update(ZenOrganization(**org_data))
+            user_data["organization_id"] = org.id
+            ticket_data["organization_id"] = org.id
+        user = client.users.create_or_update(ZenUser(**user_data))
+        ticket_data["requester_id"] = user.id
+        ticket_audit = client.tickets.create(Ticket(**ticket_data))
+        return ticket_audit.ticket.id
 
     def check_permission(self, user):
         """Check if a user has permission to manage this task"""

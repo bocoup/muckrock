@@ -473,7 +473,7 @@ $request-breakpoint: 768px;
 }
 
 .request .access {
-    .generate-private-link, .grant-access {
+    .generate-private-link, .grant-access, .change-owner {
         padding: $vr;
         @include border;
         h3 {
@@ -505,7 +505,7 @@ $request-breakpoint: 768px;
             padding-left: $vr;
         }
     }
-    .grant-access .picker {
+    .grant-access .picker, .change-owner .picker {
         @include display(flex);
         @include flex-wrap(wrap);
         @include align-items(flex-end);
@@ -593,6 +593,9 @@ $request-breakpoint: 768px;
             }
         }
     }
+    .change-owner h3 {
+      color: $color-red;
+    }
 }
 
 .request .tasks {
@@ -672,4 +675,16 @@ $request-breakpoint: 768px;
 
 article.passcode-form {
   margin-bottom: 5em;
+}
+
+.raw-content {
+  width: 80%;
+  height: 60vh;
+  padding: 7px;
+  border: 1px solid black;
+  font-size: $size-2;
+  overflow: auto;
+  &.hide {
+    display: none;
+  }
 }

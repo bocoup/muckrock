@@ -321,7 +321,6 @@ CELERY_TASK_IGNORE_RESULTS = True
 CELERY_IMPORTS = (
     "muckrock.accounts.tasks",
     "muckrock.agency.tasks",
-    "muckrock.communication.tasks",
     "muckrock.crowdsource.tasks",
     "muckrock.foia.tasks",
     "muckrock.portal.tasks",
@@ -442,6 +441,10 @@ MAILCHIMP_LIST_DEFAULT = "20aa4a931d"
 
 MAILGUN_ACCESS_KEY = os.environ.get("MAILGUN_ACCESS_KEY")
 MAILGUN_SERVER_NAME = os.environ.get("MAILGUN_SERVER_NAME", "requests.muckrock.com")
+MAILGUN_API_URL = os.environ.get(
+    "MAILGUN_API_URL", f"https://api.mailgun.net/v3/{MAILGUN_SERVER_NAME}"
+)
+
 
 EMAIL_SUBJECT_PREFIX = "[Muckrock]"
 EMAIL_BACKEND = os.environ.get(
@@ -610,6 +613,7 @@ FONT_PATH = "/usr/share/fonts/truetype/dejavu/"
 
 CHECK_EMAIL = os.environ.get("CHECK_EMAIL", "")
 CHECK_LIMIT = int(os.environ.get("CHECK_LIMIT", 200))
+CHECK_NOTIFICATIONS = boolcheck(os.environ.get("CHECK_NOTIFICATIONS", False))
 
 DASHING = {
     "INSTALLED_WIDGETS": ("number", "list", "graph", "requestlist"),

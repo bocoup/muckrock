@@ -33,6 +33,7 @@ from muckrock.foia.forms import (
     FOIAEstimatedCompletionDateForm,
     FOIAFlagForm,
     FOIANoteForm,
+    FOIAOwnerForm,
     FOIASoftDeleteForm,
     RequestFeeForm,
     ResendForm,
@@ -138,6 +139,14 @@ def flag(request, foia):
         messages.success(request, "Problem succesfully reported")
         if request.user.is_authenticated:
             new_action(request.user, "flagged", target=foia)
+        if foia.has_perm(request.user, "change"):
+            foia.notes.create(
+                foia=foia,
+                author=request.user,
+                datetime=timezone.now(),
+                note="Submitted help request:\n\n" + form.cleaned_data["text"],
+            )
+
     return _get_redirect(request, foia)
 
 
@@ -455,6 +464,23 @@ def promote(request, foia):
         messages.success(
             request, "%s can now edit this request." % user.profile.full_name
         )
+    return _get_redirect(request, foia)
+
+
+def change_owner(request, foia):
+    """Change the owner of the request"""
+    form = FOIAOwnerForm(request.POST)
+    has_perm = foia.has_perm(request.user, "change")
+    if not has_perm or not form.is_valid():
+        return _get_redirect(request, foia)
+
+    form.change_owner(request.user, [foia])
+    new_user = form.cleaned_data["user"]
+    messages.success(
+        request,
+        f"Request has been succesfully transferred to {new_user.profile.full_name} "
+        f"({new_user.username})",
+    )
     return _get_redirect(request, foia)
 
 

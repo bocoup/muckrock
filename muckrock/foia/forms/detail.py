@@ -82,9 +82,40 @@ class FOIAAccessForm(forms.Form):
 
     def __init__(self, *args, **kwargs):
         required = kwargs.pop("required", True)
-        super(FOIAAccessForm, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.fields["users"].required = required
         self.fields["access"].required = required
+
+
+class FOIAOwnerForm(forms.Form):
+    """Form to change the owner of a request"""
+
+    user = forms.ModelChoiceField(
+        queryset=User.objects.all(),
+        widget=autocomplete.ModelSelect2(
+            url="user-autocomplete", attrs={"data-placeholder": "User?"}
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        required = kwargs.pop("required", True)
+        super().__init__(*args, **kwargs)
+        self.fields["user"].required = required
+
+    def change_owner(self, user, foias):
+        """Perform the owner change"""
+        foias = [f for f in foias if f.has_perm(user, "change")]
+        new_user = self.cleaned_data["user"]
+        for foia in foias:
+            old_user = foia.composer.user
+            foia.composer.user = new_user
+            foia.composer.save()
+            foia.notes.create(
+                author=user,
+                note=f"{user.username} ({user.pk}) changed ownership of this request "
+                f"from {old_user.username} ({old_user.pk}) "
+                f"to {new_user.username} ({new_user.pk})",
+            )
 
 
 class TrackingNumberForm(forms.ModelForm):

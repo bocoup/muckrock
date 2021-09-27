@@ -32,7 +32,12 @@ from muckrock.foia.filters import (
     MyFOIARequestFilterSet,
     ProcessingFOIARequestFilterSet,
 )
-from muckrock.foia.forms import FOIAAccessForm, SaveSearchForm, SaveSearchFormHandler
+from muckrock.foia.forms import (
+    FOIAAccessForm,
+    FOIAOwnerForm,
+    SaveSearchForm,
+    SaveSearchFormHandler,
+)
 from muckrock.foia.models import END_STATUS, FOIAComposer, FOIARequest, FOIASavedSearch
 from muckrock.foia.rules import can_embargo, can_embargo_permananently
 from muckrock.foia.tasks import export_csv
@@ -80,7 +85,7 @@ class RequestExploreView(TemplateView):
             .order_by("-pub_date")
         )[:3]
         context["featured_projects"] = (
-            Project.objects.get_visible(user)
+            Project.objects.get_viewable(user)
             .filter(featured=True)
             .prefetch_related(
                 Prefetch(
@@ -158,10 +163,11 @@ class RequestList(MRSearchFilterListView):
         )
         if self.request.user.is_authenticated:
             context["crowdsource_form"] = CrowdsourceChoiceForm(user=self.request.user)
-        if self.request.user.is_authenticated:
             context["saved_searches"] = FOIASavedSearch.objects.filter(
                 user=self.request.user
             )
+        if self.request.user.is_staff:
+            context["owner_form"] = FOIAOwnerForm(required=False)
         return context
 
     def render_to_response(self, context, **kwargs):
@@ -218,7 +224,8 @@ class RequestList(MRSearchFilterListView):
             "crowdsource_page": self._crowdsource_page,
         }
         if self.request.user.is_staff:
-            actions["review_agency"] = self._review_agency
+            actions["review-agency"] = self._review_agency
+            actions["change-owner"] = self._change_owner
         return actions
 
     def _delete(self, request):
@@ -295,9 +302,22 @@ class RequestList(MRSearchFilterListView):
         foias = foias.get_viewable(user)
         for foia in foias:
             ReviewAgencyTask.objects.ensure_one_created(
-                agency=foia.agency, resolved=False
+                agency=foia.agency, resolved=False, source="staff"
             )
         return "Review agency tasks created"
+
+    def _change_owner(self, foias, user, post):
+        """Change the owner of the request"""
+        form = FOIAOwnerForm(post)
+        if form.is_valid():
+            form.change_owner(user, foias)
+            new_user = form.cleaned_data["user"]
+            return (
+                "Requests have been succesfully transferred to "
+                f"{new_user.profile.full_name} ({new_user.username})"
+            )
+        else:
+            return None
 
     def get(self, request, *args, **kwargs):
         """Check for loading saved searches"""
@@ -339,6 +359,7 @@ class MyRequestList(RequestList):
         context["share_form"] = FOIAAccessForm(required=False)
         context["can_embargo"] = can_embargo(self.request.user)
         context["can_perm_embargo"] = can_embargo_permananently(self.request.user)
+        context["owner_form"] = FOIAOwnerForm(required=False)
         return context
 
     def get_actions(self):
@@ -352,6 +373,7 @@ class MyRequestList(RequestList):
                 "project": self._project,
                 "tags": self._tags,
                 "share": self._share,
+                "change-owner": self._change_owner,
                 "autofollowup-on": self._autofollowup_on,
                 "autofollowup-off": self._autofollowup_off,
             }
