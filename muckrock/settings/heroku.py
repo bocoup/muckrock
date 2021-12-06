@@ -24,9 +24,11 @@ TEMPLATES[0]["OPTIONS"]["loaders"] = [
 del TEMPLATES[0]["APP_DIRS"]
 
 if "MEMCACHIER_SERVERS" in os.environ:
-    servers = os.environ.get("MEMCACHIER_SERVERS", "")
-    username = os.environ.get("MEMCACHIER_USERNAME", "")
-    password = os.environ.get("MEMCACHIER_PASSWORD", "")
+    os.environ["MEMCACHE_SERVERS"] = os.environ.get("MEMCACHIER_SERVERS", "").replace(
+        ",", ";"
+    )
+    os.environ["MEMCACHE_USERNAME"] = os.environ.get("MEMCACHIER_USERNAME", "")
+    os.environ["MEMCACHE_PASSWORD"] = os.environ.get("MEMCACHIER_PASSWORD", "")
 
     CACHES["default"] = {
         # Use pylibmc
@@ -35,12 +37,9 @@ if "MEMCACHIER_SERVERS" in os.environ:
         # timeout that should be applied to keys! Setting it to `None`
         # disables expiration.
         "TIMEOUT": None,
-        "LOCATION": servers,
         "OPTIONS": {
             # Use binary memcache protocol (needed for authentication)
             "binary": True,
-            "username": username,
-            "password": password,
             "behaviors": {
                 # Enable faster IO
                 "no_block": True,
