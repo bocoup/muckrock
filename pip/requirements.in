@@ -26,7 +26,6 @@ django-mathfilters # Mathematical template filters
 django-opensearch # Enables opensearch
 django-phonenumber-field # for storing phone numbers in the database
 django-premailer # Styles HTML emails
-django-pylibmc # Interface to memcache
 django-reversion # Version history for models
 django-robots # Manage robots.txt file
 django-sslify # Force SSL everywhere
