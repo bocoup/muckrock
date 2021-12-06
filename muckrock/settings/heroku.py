@@ -32,7 +32,7 @@ if "MEMCACHIER_SERVERS" in os.environ:
 
     CACHES["default"] = {
         # Use pylibmc
-        "BACKEND": "django_pylibmc.memcached.PyLibMCCache",
+        "BACKEND": "django.core.cache.backends.memcached.PyLibMCCache",
         # Use binary memcache protocol (needed for authentication)
         "BINARY": True,
         # TIMEOUT is not the connection timeout! It's the default expiration
