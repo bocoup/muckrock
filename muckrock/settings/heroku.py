@@ -24,9 +24,8 @@ TEMPLATES[0]["OPTIONS"]["loaders"] = [
 del TEMPLATES[0]["APP_DIRS"]
 
 if "MEMCACHIER_SERVERS" in os.environ:
-    os.environ["MEMCACHE_SERVERS"] = os.environ.get("MEMCACHIER_SERVERS", "").replace(
-        ",", ";"
-    )
+    servers = os.environ.get("MEMCACHIER_SERVERS", "").replace(",", ";")
+    os.environ["MEMCACHE_SERVERS"] = servers
     os.environ["MEMCACHE_USERNAME"] = os.environ.get("MEMCACHIER_USERNAME", "")
     os.environ["MEMCACHE_PASSWORD"] = os.environ.get("MEMCACHIER_PASSWORD", "")
 
@@ -37,6 +36,7 @@ if "MEMCACHIER_SERVERS" in os.environ:
         # timeout that should be applied to keys! Setting it to `None`
         # disables expiration.
         "TIMEOUT": None,
+        "LOCATION": servers,
         "OPTIONS": {
             # Use binary memcache protocol (needed for authentication)
             "binary": True,
