@@ -37,6 +37,7 @@ if "MEMCACHIER_SERVERS" in os.environ:
         # disables expiration.
         "TIMEOUT": None,
         "LOCATION": servers,
+        "BINARY": True,
         "OPTIONS": {
             # Use binary memcache protocol (needed for authentication)
             "binary": True,
