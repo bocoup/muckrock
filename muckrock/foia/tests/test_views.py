@@ -639,25 +639,19 @@ class TestRawEmail(TestCase):
 
     def setUp(self):
         """Set up for tests"""
-        self.comm = FOIACommunicationFactory(
-            foia__composer__user=ProfessionalUserFactory()
-        )
+        self.comm = FOIACommunicationFactory()
         self.request_factory = RequestFactory()
         self.url = reverse("foia-raw", kwargs={"idx": self.comm.id})
         self.view = raw
 
     def test_raw_email_view(self):
-        """Advanced users should be able to view raw emails"""
-        free_user = UserFactory()
-        pro_user = self.comm.foia.user
+        """All users should be able to view raw emails"""
+        free_user = self.comm.foia.user
         request = self.request_factory.get(self.url)
         request = mock_middleware(request)
         request.user = free_user
         response = self.view(request, self.comm.id)
-        eq_(response.status_code, 302, "Free users should be denied access.")
-        request.user = pro_user
-        response = self.view(request, self.comm.id)
-        eq_(response.status_code, 200, "Advanced users should be allowed access.")
+        eq_(response.status_code, 200)
 
 
 class TestFOIACrowdfunding(TestCase):
@@ -1077,6 +1071,18 @@ class TestFOIAComposerViews(TestCase):
         request = mock_middleware(request)
         response = CreateComposer.as_view()(request)
         eq_(response.status_code, 200)
+
+    def test_get_create_composer_clone_anonymous(self):
+        """Test cloning a composer as an anonymous user"""
+        clone = FOIARequestFactory()
+        request = self.request_factory.get(
+            reverse("foia-create") + "?clone={}".format(clone.composer.pk)
+        )
+        request.user = AnonymousUser()
+        request = mock_middleware(request)
+        response = CreateComposer.as_view()(request)
+        eq_(response.status_code, 200)
+        eq_(response.context_data["form"].initial["title"], clone.composer.title)
 
     def test_post_create_composer_anonymous(self):
         """Create a new composer as an anonymous user"""

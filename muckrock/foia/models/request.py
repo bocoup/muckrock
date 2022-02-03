@@ -459,8 +459,8 @@ class FOIARequest(models.Model):
         not set the request status, unless the request requires a proxy.
         """
 
-        if appeal and self.agency.appeal_agency:
-            agency = self.agency.appeal_agency
+        if appeal:
+            agency = self.agency.get_appeal_agency()
         else:
             agency = self.agency
 
@@ -611,7 +611,7 @@ class FOIARequest(models.Model):
 
     def get_appeal_contact_info(self):
         """Get the appeal contact info"""
-        agency = self.agency.appeal_agency or self.agency
+        agency = self.agency.get_appeal_agency()
         return {
             "email": agency.get_emails("appeal", "to").first(),
             "cc_emails": json.dumps(
@@ -886,8 +886,8 @@ class FOIARequest(models.Model):
         with transaction.atomic():
             # if no address, try to find one on the agency
             if not self.address:
-                if kwargs.get("appeal") and self.agency.appeal_agency:
-                    agency = self.agency.appeal_agency
+                if kwargs.get("appeal"):
+                    agency = self.agency.get_appeal_agency()
                     request_type = "appeal"
                 elif kwargs.get("appeal"):
                     agency = self.agency
@@ -952,8 +952,8 @@ class FOIARequest(models.Model):
             if payment_address:
                 context["address"] = payment_address.format(self.agency, appeal=appeal)
         elif self.address and include_address:
-            if appeal and self.agency and self.agency.appeal_agency:
-                agency = self.agency.appeal_agency
+            if appeal and self.agency:
+                agency = self.agency.get_appeal_agency()
             else:
                 agency = self.agency
             context["address"] = self.address.format(agency, appeal=appeal)
@@ -963,7 +963,7 @@ class FOIARequest(models.Model):
             context["reply_link"] = settings.MUCKROCK_URL + reverse(
                 "communication-direct-agency", kwargs={"idx": comm.pk}
             )
-            context["passcode"] = comm.foia.get_passcode()
+        context["passcode"] = comm.foia.get_passcode()
         context["attachments"] = comm.files.values_list("title", flat=True)
         if switch:
             first_request = self.communications.all()[0]

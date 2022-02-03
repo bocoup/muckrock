@@ -197,7 +197,6 @@ can_view = can_edit | is_viewer | is_from_agency | is_proxy | ~is_private
 
 @predicate
 @skip_if_not_obj
-@user_authenticated
 def can_view_composer_child(user, composer):
     for foia in composer.foias.all():
         if foia.has_perm(user, "view"):
@@ -243,7 +242,7 @@ add_perm("foia.delete_foiacomposer", can_edit_composer & has_status("started"))
 add_perm("foia.upload_attachment_foiacomposer", can_edit_composer)
 add_perm("foia.change_foiacomposer", can_edit_composer)
 
-add_perm("foia.view_rawemail", has_feature_level(1))
+add_perm("foia.view_rawemail", is_authenticated)
 add_perm("foia.file_multirequest", has_feature_level(1))
 add_perm("foia.export_csv", has_feature_level(1))
 add_perm("foia.zip_download_foiarequest", can_edit)

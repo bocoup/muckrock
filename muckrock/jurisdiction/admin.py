@@ -14,6 +14,7 @@ import logging
 from reversion.admin import VersionAdmin
 
 # MuckRock
+from muckrock.agency.models.agency import Agency
 from muckrock.core import autocomplete
 from muckrock.foia.models import FOIARequest
 from muckrock.jurisdiction.models import (
@@ -30,10 +31,29 @@ logger = logging.getLogger(__name__)
 # pylint: disable=too-many-public-methods
 
 
+class LawAdminForm(forms.ModelForm):
+    """Adds an autocomplete to the appeal agency field."""
+
+    appeal_agency = forms.ModelChoiceField(
+        queryset=Agency.objects.all(),
+        required=False,
+        widget=autocomplete.ModelSelect2(
+            url="agency-autocomplete",
+            forward=("jurisdiction",),
+            attrs={"data-placeholder": "Agency?", "data-width": None},
+        ),
+    )
+
+    class Meta:
+        model = Law
+        fields = "__all__"
+
+
 class LawInline(admin.StackedInline):
     """Law admin options"""
 
     model = Law
+    form = LawAdminForm
     extra = 0
 
 

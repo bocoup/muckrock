@@ -109,16 +109,10 @@ class TestAgencyUnit(TestCase):
         a merge
         """
         # Relations pointing to the Agency model
-        eq_(
-            len(
-                [
-                    f
-                    for f in Agency._meta.get_fields()
-                    if f.is_relation and f.auto_created
-                ]
-            ),
-            16,
-        )
+        relations = [
+            f for f in Agency._meta.get_fields() if f.is_relation and f.auto_created
+        ]
+        eq_(len(relations), 17, relations)
         # Many to many relations defined on the agency model
         eq_(
             len(

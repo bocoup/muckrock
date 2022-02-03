@@ -4,8 +4,8 @@
 #
 #    pip-compile --output-file pip/requirements.txt pip/requirements.in
 #
--e git+git://github.com/BradWhittington/django-mailgun.git@c4bfb77fca1eb3d5c772294e3d065274bab9ddc6#egg=django_mailgun
--e git+git://github.com/theatlantic/django-news-sitemaps.git@django3x#egg=django_news_sitemaps
+-e git+https://github.com/BradWhittington/django-mailgun.git@c4bfb77fca1eb3d5c772294e3d065274bab9ddc6#egg=django_mailgun
+-e git+https://github.com/theatlantic/django-news-sitemaps.git@django3x#egg=django_news_sitemaps
 amqp==2.6.0               # via kombu
 asgiref==3.4.1            # via django, scout-apm
 backcall==0.2.0           # via ipython
@@ -30,7 +30,7 @@ defusedxml==0.7.0rc1      # via python3-openid, social-auth-core
 dill==0.3.2
 django-activity-stream==0.10.0
 django-appconf==1.0.4     # via django-celery-email, django-compressor, django-opensearch
-django-autocomplete-light==3.7.0.dev0
+django-autocomplete-light==3.9.0rc5
 django-celery-email==3.0.0
 django-choices==1.6.1
 django-compat==1.0.15

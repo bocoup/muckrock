@@ -9,6 +9,7 @@ from django.utils.timezone import get_default_timezone
 
 # Third Party
 from rest_framework import permissions, serializers
+from taggit.serializers import TaggitSerializer, TagListSerializerField
 
 # MuckRock
 from muckrock.agency.models import Agency
@@ -140,7 +141,7 @@ class FOIANoteSerializer(serializers.ModelSerializer):
         exclude = ("id", "foia")
 
 
-class FOIARequestSerializer(serializers.ModelSerializer):
+class FOIARequestSerializer(TaggitSerializer, serializers.ModelSerializer):
     """Serializer for FOIA Request model"""
 
     username = serializers.StringRelatedField(source="composer.user")
@@ -152,7 +153,7 @@ class FOIARequestSerializer(serializers.ModelSerializer):
     agency = serializers.PrimaryKeyRelatedField(
         queryset=Agency.objects.all(), style={"base_template": "input.html"}
     )
-    tags = serializers.StringRelatedField(many=True)
+    tags = TagListSerializerField()
     communications = FOIACommunicationSerializer(many=True)
     notes = FOIANoteSerializer(many=True)
     absolute_url = serializers.SerializerMethodField()
@@ -161,6 +162,7 @@ class FOIARequestSerializer(serializers.ModelSerializer):
         read_only=True, source="composer.datetime_submitted"
     )
     datetime_done = DateTimeField()
+    datetime_updated = DateTimeField()
 
     def __init__(self, *args, **kwargs):
         super(FOIARequestSerializer, self).__init__(*args, **kwargs)
@@ -226,6 +228,7 @@ class FOIARequestSerializer(serializers.ModelSerializer):
             "days_until_due",
             "date_followup",
             "datetime_done",
+            "datetime_updated",
             "date_embargo",
             # processing details
             "mail_id",
