@@ -257,6 +257,13 @@ class Law(models.Model):
     has_appeal = models.BooleanField(
         default=True, help_text="Does this jurisdiction have an appeals process?"
     )
+    appeal_agency = models.ForeignKey(
+        "agency.Agency",
+        related_name="laws",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
     requires_proxy = models.BooleanField(default=False)
     law_analysis = models.TextField(
         blank=True,

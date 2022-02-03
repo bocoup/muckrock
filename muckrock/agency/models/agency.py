@@ -305,6 +305,18 @@ class Agency(models.Model, RequestHelper):
         else:
             return {"proxy": False, "missing_proxy": False}
 
+    def get_appeal_agency(self):
+        """Get the appeal agency for this agency"""
+        # first check if this agency has its own appeal agency set
+        if self.appeal_agency:
+            return self.appeal_agency
+        # then check for a jurisdiction wide appeal agency
+        law = self.jurisdiction.legal.law
+        if law and law.appeal_agency:
+            return appeal
+        # fall back to returning the original agency
+        return self
+
     def has_open_review_task(self):
         """Is there an open review agency task for this agency"""
         return self.reviewagencytask_set.filter(resolved=False).exists()
@@ -339,6 +351,7 @@ class Agency(models.Model, RequestHelper):
             "flaggedtask_set",
             "newagencytask_set",
             "staleagencytask_set",
+            "laws",
         ]
         for relation in replace_relations:
             getattr(agency, relation).update(agency=self)
