@@ -313,7 +313,7 @@ class Agency(models.Model, RequestHelper):
         # then check for a jurisdiction wide appeal agency
         law = self.jurisdiction.legal.law
         if law and law.appeal_agency:
-            return appeal
+            return law.appeal_agency
         # fall back to returning the original agency
         return self
 
